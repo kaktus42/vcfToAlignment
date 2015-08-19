@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="module_vcftoalignment" default="compile.module.vcftoalignment">
+  <dirname property="module.vcftoalignment.basedir" file="${ant.file.module_vcftoalignment}"/>
+  
+  <property name="module.jdk.home.vcftoalignment" value="${project.jdk.home}"/>
+  <property name="module.jdk.bin.vcftoalignment" value="${project.jdk.bin}"/>
+  <property name="module.jdk.classpath.vcftoalignment" value="${project.jdk.classpath}"/>
+  
+  <property name="compiler.args.vcftoalignment" value="-encoding UTF-8 -source 1.7 ${compiler.args}"/>
+  
+  <property name="vcftoalignment.output.dir" value="${module.vcftoalignment.basedir}/out/production/vcfToAlignment"/>
+  <property name="vcftoalignment.testoutput.dir" value="${module.vcftoalignment.basedir}/out/test/vcfToAlignment"/>
+  
+  <path id="vcftoalignment.module.bootclasspath">
+    <!-- Paths to be included in compilation bootclasspath -->
+  </path>
+  
+  <path id="vcftoalignment.module.production.classpath">
+    <path refid="${module.jdk.classpath.vcftoalignment}"/>
+    <path refid="library.java.classpath"/>
+  </path>
+  
+  <path id="vcftoalignment.runtime.production.module.classpath">
+    <pathelement location="${vcftoalignment.output.dir}"/>
+    <path refid="library.java.classpath"/>
+  </path>
+  
+  <path id="vcftoalignment.module.classpath">
+    <path refid="${module.jdk.classpath.vcftoalignment}"/>
+    <pathelement location="${vcftoalignment.output.dir}"/>
+    <path refid="library.java.classpath"/>
+  </path>
+  
+  <path id="vcftoalignment.runtime.module.classpath">
+    <pathelement location="${vcftoalignment.testoutput.dir}"/>
+    <pathelement location="${vcftoalignment.output.dir}"/>
+    <path refid="library.java.classpath"/>
+  </path>
+  
+  
+  <patternset id="excluded.from.module.vcftoalignment">
+    <patternset refid="ignored.files"/>
+  </patternset>
+  
+  <patternset id="excluded.from.compilation.vcftoalignment">
+    <patternset refid="excluded.from.module.vcftoalignment"/>
+  </patternset>
+  
+  <path id="vcftoalignment.module.sourcepath">
+    <dirset dir="${module.vcftoalignment.basedir}">
+      <include name="src"/>
+    </dirset>
+  </path>
+  
+  <path id="vcftoalignment.module.test.sourcepath">
+    <dirset dir="${module.vcftoalignment.basedir}">
+      <include name="test"/>
+    </dirset>
+  </path>
+  
+  
+  <target name="compile.module.vcftoalignment" depends="compile.module.vcftoalignment.production,compile.module.vcftoalignment.tests" description="Compile module vcfToAlignment"/>
+  
+  <target name="compile.module.vcftoalignment.production" description="Compile module vcfToAlignment; production classes">
+    <mkdir dir="${vcftoalignment.output.dir}"/>
+    <javac destdir="${vcftoalignment.output.dir}" debug="${compiler.debug}" nowarn="${compiler.generate.no.warnings}" memorymaximumsize="${compiler.max.memory}" fork="true" executable="${module.jdk.bin.vcftoalignment}/javac">
+      <compilerarg line="${compiler.args.vcftoalignment}"/>
+      <bootclasspath refid="vcftoalignment.module.bootclasspath"/>
+      <classpath refid="vcftoalignment.module.production.classpath"/>
+      <src refid="vcftoalignment.module.sourcepath"/>
+      <patternset refid="excluded.from.compilation.vcftoalignment"/>
+    </javac>
+    
+    <copy todir="${vcftoalignment.output.dir}">
+      <fileset dir="${module.vcftoalignment.basedir}/src">
+        <patternset refid="compiler.resources"/>
+        <type type="file"/>
+      </fileset>
+    </copy>
+  </target>
+  
+  <target name="compile.module.vcftoalignment.tests" depends="compile.module.vcftoalignment.production" description="compile module vcfToAlignment; test classes" unless="skip.tests">
+    <mkdir dir="${vcftoalignment.testoutput.dir}"/>
+    <javac destdir="${vcftoalignment.testoutput.dir}" debug="${compiler.debug}" nowarn="${compiler.generate.no.warnings}" memorymaximumsize="${compiler.max.memory}" fork="true" executable="${module.jdk.bin.vcftoalignment}/javac">
+      <compilerarg line="${compiler.args.vcftoalignment}"/>
+      <bootclasspath refid="vcftoalignment.module.bootclasspath"/>
+      <classpath refid="vcftoalignment.module.classpath"/>
+      <src refid="vcftoalignment.module.test.sourcepath"/>
+      <patternset refid="excluded.from.compilation.vcftoalignment"/>
+    </javac>
+    
+    <copy todir="${vcftoalignment.testoutput.dir}">
+      <fileset dir="${module.vcftoalignment.basedir}/test">
+        <patternset refid="compiler.resources"/>
+        <type type="file"/>
+      </fileset>
+    </copy>
+  </target>
+  
+  <target name="clean.module.vcftoalignment" description="cleanup module">
+    <delete dir="${vcftoalignment.output.dir}"/>
+    <delete dir="${vcftoalignment.testoutput.dir}"/>
+  </target>
+</project>
