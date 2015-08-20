@@ -66,4 +66,5 @@
     </target>
 
     <target name="all" depends="load.libs, clean, runUnitTests" description="build all"/>
+    <target name="test" depends="load.libs, clean, runUnitTests" description="build all"/>
 </project>
