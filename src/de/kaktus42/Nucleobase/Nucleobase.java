@@ -131,6 +131,11 @@ public class Nucleobase
         return this.base == that.base;
     }
 
+    @Override
+    public int hashCode() {
+        return this.base;
+    }
+
     public String toString() {
         return String.valueOf(this.base);
     }

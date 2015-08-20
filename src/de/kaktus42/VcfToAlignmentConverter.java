@@ -9,11 +9,18 @@ import htsjdk.variant.variantcontext.VariantContext;
 import htsjdk.variant.vcf.VCFFileReader;
 import htsjdk.variant.vcf.VCFHeader;
 
+import java.io.*;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 
 public class VcfToAlignmentConverter
 {
+    public static final int PHYLIP_FORMAT_STRICT = 0;
+    public static final int PHYLIP_FORMAT_RELAXED = 1;
+    public static final int PHYLIP_FORMAT_OTHER = 10;
+
     /**
      * true:  AA/A -> AN
      * false: AA/A -> AA
@@ -26,9 +33,59 @@ public class VcfToAlignmentConverter
     private int surroundingReferenceAmount = 4;
 
     /**
+     * amount of blocks written in interleaved mode. If 0, file is written in sequential mode
+     */
+    private int interleavedBlockCount = 6;
+
+    /**
+     * size of blocks written in interleaved mode
+     */
+    private int interleavedBlockSize = 10;
+
+    /**
+     * detected phylip format to use
+     */
+    private int phylipFormat = this.PHYLIP_FORMAT_STRICT;
+
+    /**
      *
      */
     private String refSeqName = "refSeq";
+
+    /**
+     * length of taxa names
+     */
+    private int longestSampleNameLength = refSeqName.length();
+
+    /**
+     * to write the output
+     */
+    private PrintWriter outWriter;
+
+    /**
+     * holds current size of alignmentBuilders
+     */
+    private int bufferSize = 0;
+
+    /**
+     * how many bases have been written to the alignment file
+     */
+    private int alignmentLength = 0;
+
+    /**
+     * how much space to leave for header.
+     *  -> 4 for taxa count, 36 for alignment length
+     */
+    private static final int headerSizeTaxaCount = 4;
+    private static final int headerSizeAlignmentLength = 36;
+    private static int headerSize = headerSizeTaxaCount + headerSizeAlignmentLength;
+
+    /**
+     * states if the outfile writer is still on the first section that includes the taxa names
+     */
+    private boolean hasWrittenFirstSection;
+    private int preBlockCharacterCount;
+    private int blockCharacterCount;
 
     private HashMap<String, StringBuilder> alignmentBuilders;
 
@@ -42,13 +99,22 @@ public class VcfToAlignmentConverter
     }
 
     public void convert(VCFFileReader varaintFileReader,
-                        IndexedFastaSequenceFile indexedReferenceFile){
+                        IndexedFastaSequenceFile indexedReferenceFile,
+                        File outFile){
         VCFHeader vcfHeader = varaintFileReader.getFileHeader();
+
+        // Prepare output file in buffered write mode
+        try {
+            outWriter = new PrintWriter(new BufferedWriter(new FileWriter(outFile)));
+            //outFileRAF = new RandomAccessFile(outFile, "w");
+        } catch (IOException e) {
+            e.printStackTrace();
+            throw new ConverterException("Could not open output file");
+        }
 
         // Determine longest sample name for formatting
         // Initialize alignmentBuilders
         alignmentBuilders = new HashMap<>();
-        int longestSampleNameLength = refSeqName.length();
         alignmentBuilders.put(refSeqName, new StringBuilder());
         for(String sampleName : vcfHeader.getGenotypeSamples()) {
             if(sampleName.length() > longestSampleNameLength) {
@@ -56,28 +122,47 @@ public class VcfToAlignmentConverter
             }
             alignmentBuilders.put(sampleName, new StringBuilder());
         }
-        for(Map.Entry<String, StringBuilder> entry : alignmentBuilders.entrySet()) {
-            entry.getValue().append(Util.paddedString(entry.getKey(), longestSampleNameLength, ' ')).append('\t');
+        if(longestSampleNameLength > 250 && phylipFormat != this.PHYLIP_FORMAT_OTHER) {
+            System.err.println("WARNING: one or more samples have names longer than 250 characters. This violates relaxed phylip format.");
+            phylipFormat = this.PHYLIP_FORMAT_OTHER;
+        } else if(longestSampleNameLength > 10 && phylipFormat != this.PHYLIP_FORMAT_RELAXED) {
+            System.err.println("WARNING: one or more samples have names longer than 10 characters. This violates strict phylip format.");
+            phylipFormat = this.PHYLIP_FORMAT_RELAXED;
         }
 
+        // write header to file and sample names to buffers
+        outWriter.append(Util.rightPaddedString("", headerSize, ' ')).append('\n');  // 20 spaces for header data, written later
+        hasWrittenFirstSection = false;
+        preBlockCharacterCount = longestSampleNameLength + (phylipFormat != PHYLIP_FORMAT_STRICT ? 1 : 0);
+        blockCharacterCount = interleavedBlockCount * interleavedBlockSize;
+
+
+        // loop over variants
         String basesAfter = "";
         String lastContig = null;
         int lastPosition = -1;
         int lastSurroundingReferenceAmountAfter = 0;
+        bufferSize = 0;
+        ReferenceSequence contigSequence = null;
         for(VariantContext variantContext : varaintFileReader) {
 
-            // When changing the chromosome, reset everything and safely append rest of sequence
+            // When changing the chromosome, reset everything
             if(lastContig == null || !lastContig.equals(variantContext.getContig())) {
                 lastContig = variantContext.getContig();
                 lastPosition = -1;
                 lastSurroundingReferenceAmountAfter = 0;
+                System.err.println("LOG: Entering contig " + lastContig);
+                contigSequence = indexedReferenceFile.getSequence(variantContext.getContig());
             }
 
             // When two varaints overlap - is that allowed in VCF format?
             if(lastPosition >= variantContext.getStart()) {
-                throw new ConverterException("ERROR: Following variant overlaps the previous variant:\n" + variantContext);
+                System.err.println("WARNING: Skipping variant becuse it overlaps with the previous variant:");
+                System.err.println(variantContext);
+                continue;
             }
 
+            // decide what to do with the basesAfter from the last variant
             int surroundingReferenceAmountBefore = variantContext.getStart() - surroundingReferenceAmount < 0 ? variantContext.getStart() - 1 : surroundingReferenceAmount;
             if(lastPosition + lastSurroundingReferenceAmountAfter >= variantContext.getStart()) {
                 // When two consecutive varaints overlap respective their surroundings
@@ -86,11 +171,11 @@ public class VcfToAlignmentConverter
             } else {
                 // safely append surrounding reference sequence after
                 appendToAllSequences(basesAfter);
+                bufferSize += basesAfter.length();
             }
 
             // get parts of the reference sequence around the variant site
             // take care of edge cases
-            ReferenceSequence contigSequence = indexedReferenceFile.getSequence(variantContext.getContig());
             int surroundingReferenceAmountAfter = variantContext.getEnd() + surroundingReferenceAmount > contigSequence.length() ? contigSequence.length() - variantContext.getEnd() : surroundingReferenceAmount;
             lastSurroundingReferenceAmountAfter = surroundingReferenceAmountAfter;
             ReferenceSequence referenceSequence =
@@ -123,17 +208,9 @@ public class VcfToAlignmentConverter
                 }
             }
 
-
-            System.out.println(variantContext);
-            System.out.println(variantLength);
-            System.out.format("%s\t%s%s%s\n",
-                    Util.paddedString("", longestSampleNameLength, ' '),
-                    Util.paddedString("", basesBefore.length() + alignmentBuilders.get(refSeqName).length() - (longestSampleNameLength+1), ' '),
-                    Util.paddedString("", multipleAlignmentWindowSize, '_'),
-                    Util.paddedString("", basesAfter.length(), ' '));
-
             alignmentBuilders.get(refSeqName).append(basesBefore)
-                    .append(Util.paddedBaseString(referenceBase, multipleAlignmentWindowSize));
+                    .append(Util.rightPaddedBaseString(referenceBase, multipleAlignmentWindowSize));
+            bufferSize += basesBefore.length() + multipleAlignmentWindowSize;
 
             // go through all samples
             for(Genotype genotype : variantContext.getGenotypesOrderedByName()) {
@@ -154,26 +231,118 @@ public class VcfToAlignmentConverter
 
                 alignmentBuilders.get(genotype.getSampleName())
                         .append(basesBefore)
-                        .append(Util.paddedBaseString(ns.toString(), multipleAlignmentWindowSize));
+                        .append(Util.rightPaddedBaseString(ns.toString(), multipleAlignmentWindowSize));
             }
 
-            System.out.println(this.getAlignment());
+            writeAlignmentBuffer(false);
         }
         appendToAllSequences(basesAfter);
+        writeAlignmentBuffer(true);
+        outWriter.close();
+
+        // overwrite header
+        byte[] header = getHeader();
+        System.err.println("LOG: Writing header:" + new String(header, StandardCharsets.UTF_8).replaceAll(" +", " "));
+        try {
+            RandomAccessFile raf = new RandomAccessFile(outFile, "rw");
+            raf.seek(0);
+            raf.write(header);
+            raf.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+            System.err.println("ERROR: Could not write header information:" + new String(header, StandardCharsets.UTF_8).replaceAll(" +", " "));
+        }
     }
 
-    public String getAlignment() {
+    /**
+     * Write alignment buffers to file
+     * If interleaved format, only write when buffer is full enough for block line break
+     *
+     * @param force write also if buffer is not full
+     */
+    private void writeAlignmentBuffer(boolean force) {
+        if(!force && (interleavedBlockCount < 1 || bufferSize < blockCharacterCount))
+            return;
+
         StringBuilder alignmentBuilder = new StringBuilder();
-        for(StringBuilder stringBuilder : alignmentBuilders.values()) {
-            alignmentBuilder.append(stringBuilder).append('\n');
+        alignmentBuilder.ensureCapacity(preBlockCharacterCount + blockCharacterCount + interleavedBlockCount + 1);
+        while(bufferSize >= blockCharacterCount) {
+            for (Map.Entry<String, StringBuilder> entry : alignmentBuilders.entrySet()) {
+                StringBuilder currentSequenceBuilder = entry.getValue();
+                if(hasWrittenFirstSection) {
+                    alignmentBuilder.append(Util.rightPaddedString("", preBlockCharacterCount, ' '));
+                } else {
+                    String currentTaxaName = entry.getKey();
+                    if(phylipFormat == this.PHYLIP_FORMAT_STRICT) {
+                        alignmentBuilder.append(Util.rightPaddedString(currentTaxaName, longestSampleNameLength, ' '));
+                    } else {
+                        alignmentBuilder.append(Util.rightPaddedString(currentTaxaName, longestSampleNameLength, ' ')).append(' ');
+                    }
+                }
+                int i = 0;
+                for(; i + 10 <= blockCharacterCount; i += 10) {
+                    alignmentBuilder.append(currentSequenceBuilder.substring(i, i + 10)).append(' ');
+                }
+                currentSequenceBuilder.delete(0, i);
+                alignmentBuilder.append('\n');
+            }
+            outWriter.append(alignmentBuilder.append('\n'));
+            hasWrittenFirstSection = true;
+            bufferSize -= blockCharacterCount;
+            alignmentLength += blockCharacterCount;
+            alignmentBuilder.setLength(0);
         }
-        return alignmentBuilder.toString();
+        if(force) {
+            int basesToWrite = alignmentBuilders.values().iterator().next().length();
+            for(Map.Entry<String, StringBuilder> entry : alignmentBuilders.entrySet()) {
+                StringBuilder currentSequenceBuilder = entry.getValue();
+                if(hasWrittenFirstSection) {
+                    alignmentBuilder.append(Util.rightPaddedString("", preBlockCharacterCount, ' '));
+                } else {
+                    String currentTaxaName = entry.getKey();
+                    if(phylipFormat == this.PHYLIP_FORMAT_STRICT) {
+                        alignmentBuilder.append(Util.rightPaddedString(currentTaxaName, longestSampleNameLength, ' '));
+                    } else {
+                        alignmentBuilder.append(Util.rightPaddedString(currentTaxaName, longestSampleNameLength, ' ')).append(' ');
+                    }
+                }
+                int i = 0;
+                for(; i + 10 <= currentSequenceBuilder.length(); i += 10) {
+                    alignmentBuilder.append(currentSequenceBuilder.substring(i, i + 10)).append(' ');
+                }
+                if(currentSequenceBuilder.length() > i)
+                    alignmentBuilder.append(currentSequenceBuilder.substring(i, currentSequenceBuilder.length()));
+                else
+                    alignmentBuilder.setLength(currentSequenceBuilder.length() - 1);
+                alignmentBuilder.append('\n');
+            }
+            outWriter.append(alignmentBuilder.append('\n'));
+            hasWrittenFirstSection = true;
+            bufferSize -= basesToWrite;
+            alignmentLength += basesToWrite;
+            alignmentBuilder.setLength(0);
+        }
+    }
+
+    private byte[] getHeader() {
+        int taxaCount = alignmentBuilders.size();
+        return Util.leftPaddedString(String.valueOf(taxaCount), headerSizeTaxaCount, ' ')
+                .concat(Util.leftPaddedString(String.valueOf(alignmentLength), headerSizeAlignmentLength, ' '))
+                .getBytes(StandardCharsets.UTF_8);
     }
 
     private void appendToAllSequences(String string) {
         for(StringBuilder stringBuilder : alignmentBuilders.values()) {
             stringBuilder.append(string);
         }
+    }
+
+    public void useStrictPhylipFormat() {
+        this.phylipFormat = this.PHYLIP_FORMAT_STRICT;
+    }
+
+    public void useRelaxedPhylipFormat() {
+        this.phylipFormat = this.PHYLIP_FORMAT_RELAXED;
     }
 
     public boolean fillsHeterozygousIndelsWithN() {

@@ -5,8 +5,13 @@ import htsjdk.variant.vcf.VCFFileReader;
 import org.junit.Before;
 import org.junit.Test;
 
-import java.io.File;
-import java.io.FileNotFoundException;
+import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 import static org.junit.Assert.*;
 
@@ -56,42 +61,46 @@ public class VcfToAlignmentConverterTest {
     @Test
     public void testConvert() throws Exception {
         VcfToAlignmentConverter converter = new VcfToAlignmentConverter(false, 4);
-        testConvertMain("testdata/test.vcf", "testdata/reference.fasta", converter);
-        String expected =
-                "refSeq \tCCATTTGTCAAATGTGAGTCCATTG-\n" +
-                "acs0293\tCTATTTGTCACATGTGAGTCCA--GA\n" +
-                "acs0292\tCYATTTGTCAMAYGTGAGTCCATTGA\n" +
-                "acs0291\tCCATTTGTCAAACGTGAGTCCATTGA\n" +
-                "acs8671\tCYATTTGTCAGACGTGAGTCCATTG-\n";
+        List<String> output = testConvertMain("testdata/test.vcf", "testdata/reference.fasta", converter);
+        ArrayList<String> expected = new ArrayList<String>() {{
+            add("   5                                  26");
+            add("refSeq  CCATTTGTCA AATGTGAGTC CATTG-");
+            add("acs0293 CTATTTGTCA CATGTGAGTC CA--GA");
+            add("acs0292 CYATTTGTCA MAYGTGAGTC CATTGA");
+            add("acs0291 CCATTTGTCA AACGTGAGTC CATTGA");
+            add("acs8671 CYATTTGTCA GACGTGAGTC CATTG-");
+            add("");
+        }};
 
-        assertEquals(expected, converter.getAlignment());
+        assertEquals(expected, output);
     }
 
     @Test
     public void testConvert2() throws Exception {
         VcfToAlignmentConverter converter = new VcfToAlignmentConverter(true, 4);
-        testConvertMain("testdata/test.vcf", "testdata/reference.fasta", converter);
-        String expected =
-                "refSeq \tCCATTTGTCAAATGTGAGTCCATTG-\n" +
-                "acs0293\tCTATTTGTCACATGTGAGTCCA--GA\n" +
-                "acs0292\tCYATTTGTCAMAYGTGAGTCCANNGN\n" +
-                "acs0291\tCCATTTGTCAAACGTGAGTCCANNGN\n" +
-                "acs8671\tCYATTTGTCAGACGTGAGTCCATTG-\n";
+        List<String> output = testConvertMain("testdata/test.vcf", "testdata/reference.fasta", converter);
+        ArrayList<String> expected = new ArrayList<String>() {{
+            add("   5                                  26");
+            add("refSeq  CCATTTGTCA AATGTGAGTC CATTG-");
+            add("acs0293 CTATTTGTCA CATGTGAGTC CA--GA");
+            add("acs0292 CYATTTGTCA MAYGTGAGTC CANNGN");
+            add("acs0291 CCATTTGTCA AACGTGAGTC CANNGN");
+            add("acs8671 CYATTTGTCA GACGTGAGTC CATTG-");
+            add("");
+        }};
 
-        assertEquals(expected, converter.getAlignment());
+        assertEquals(expected, output);
     }
 
     @Test
     public void testConvertOverlap() throws Exception {
+        ByteArrayOutputStream errContent = new ByteArrayOutputStream();
+        System.setErr(new PrintStream(errContent));
         VcfToAlignmentConverter converter = new VcfToAlignmentConverter(false, 4);
-        try {
-            testConvertMain("testdata/test_overlap.vcf", "testdata/reference.fasta", converter);
-            fail("Did not get expected ConverterException for overlapping variants");
-        } catch(ConverterException expectedException) {
-            assertTrue("Did not get expected ConverterException for overlapping variants",
-                    expectedException.getMessage()
-                            .startsWith("ERROR: Following variant overlaps the previous variant:"));
-        }
+        testConvertMain("testdata/test_overlap.vcf", "testdata/reference.fasta", converter);
+        assertTrue("Did not get expected warning for overlapping variants", errContent.toString()
+                .contains("WARNING: Skipping variant becuse it overlaps with the previous variant:"));
+        System.setErr(System.err);
     }
 
     @Test
@@ -107,11 +116,19 @@ public class VcfToAlignmentConverterTest {
         }
     }
 
-    public void testConvertMain(String variantFileName,
+    public List<String> testConvertMain(String variantFileName,
                                 String refFileName,
                                 VcfToAlignmentConverter converter) {
         File variantFile = new File(variantFileName);
         File refFile = new File(refFileName);
+        File outFile;
+        try {
+            outFile = File.createTempFile("testOutput", ".phy");
+        } catch (IOException e) {
+            e.printStackTrace();
+            fail("Could not create temporary out file for testing");
+            return new ArrayList<>();
+        }
 
         VCFFileReader variantFileReader = new VCFFileReader(variantFile, false);
         IndexedFastaSequenceFile indexedReferenceFile = null;
@@ -120,7 +137,17 @@ public class VcfToAlignmentConverterTest {
         } catch (FileNotFoundException e) {
             fail("ERROR: Cant open '" + refFile.toString() + "' to read.");
         }
-        converter.convert(variantFileReader, indexedReferenceFile);
+        converter.useRelaxedPhylipFormat();
+        converter.convert(variantFileReader, indexedReferenceFile, outFile);
+
+        List<String> lines;
+        try {
+            lines = Files.readAllLines(outFile.toPath(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            fail("Could not read temporary out file");
+            return new ArrayList<>();
+        }
+        return lines;
     }
 
     @Test

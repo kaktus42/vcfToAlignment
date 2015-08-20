@@ -34,7 +34,7 @@ public class MainTest {
     @Test
     public void testBadParameters() {
         new Main();
-        String [] bad_argv = {"/not_existent", "/not_existent"};
+        String [] bad_argv = {"/not_existent", "/not_existent", "/dev/null"};
         Main.main(bad_argv);
         assertEquals("ERROR: Cant open '/not_existent' to read.\n", errContent.toString());
         resetStreams();
@@ -46,7 +46,7 @@ public class MainTest {
 
     @Test
     public void testGoodParameters() {
-        String [] good_argv = {"testdata/test.vcf", "testdata/reference.fasta"};
+        String [] good_argv = {"testdata/test.vcf", "testdata/reference.fasta", "/dev/null"};
         Main.main(good_argv);
         //assertEquals("ERROR: Cant open '/not_existent' to read.", errContent.toString());
     }

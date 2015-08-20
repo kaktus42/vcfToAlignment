@@ -5,6 +5,8 @@ import htsjdk.variant.vcf.VCFFileReader;
 
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.io.FileWriter;
+import java.io.IOException;
 
 public class Main {
 
@@ -12,6 +14,7 @@ public class Main {
 
         File varaintFile = new File(args[0]);
         File referenceFile = new File(args[1]);
+        File outFile = new File(args[2]);
 
         if(!(varaintFile.exists() && varaintFile.canRead())) {
             System.err.println("ERROR: Cant open '" + args[0] + "' to read.");
@@ -33,8 +36,25 @@ public class Main {
 
         VCFFileReader variantFileReader = new VCFFileReader(varaintFile, false);
 
+        /*FileWriter outFileWriter;
+        try {
+            outFileWriter = new FileWriter(outFile);
+        } catch (IOException e) {
+            System.err.println("ERROR: Cant open '" + outFile.toURI() + "' to read.");
+            return;
+        }*/
+
+
         VcfToAlignmentConverter converter = new VcfToAlignmentConverter(false, 4);
-        converter.convert(variantFileReader, indexedReferenceFile);
+        converter.useRelaxedPhylipFormat();
+        converter.convert(variantFileReader, indexedReferenceFile, outFile);
+
+        /*try {
+            outFileWriter.write(converter.getAlignment());
+            outFileWriter.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }*/
 
     }
 }
