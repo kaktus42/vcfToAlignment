@@ -10,7 +10,23 @@ import java.io.IOException;
 
 public class Main {
 
+    public static void printUsage() {
+        System.out.print("usage: " + Main.class.getProtectionDomain().getCodeSource().getLocation().getFile());
+        System.out.print(" <VARIANTS> <REFERENCE> <OUT>");
+        System.out.println();
+        System.out.println("   <VARIANTS>  Input variant file name");
+        System.out.println("   <REFERENCE> Input reference file name");
+        System.out.println("   <OUT>       Output phylip file name");
+    }
+
     public static void main(String[] args) {
+        if(args.length != 3) {
+            if(args.length > 0 && args[0].contains("-version")) {
+                System.out.println("version: " + Main.class.getPackage().getImplementationVersion());
+            }
+            printUsage();
+            return;
+        }
 
         File varaintFile = new File(args[0]);
         File referenceFile = new File(args[1]);
@@ -18,6 +34,7 @@ public class Main {
 
         if(!(varaintFile.exists() && varaintFile.canRead())) {
             System.err.println("ERROR: Cant open '" + args[0] + "' to read.");
+            printUsage();
             return;
         }
         IndexedFastaSequenceFile indexedReferenceFile;
@@ -25,6 +42,7 @@ public class Main {
             indexedReferenceFile = new IndexedFastaSequenceFile(referenceFile);
         } catch (FileNotFoundException e) {
             System.err.println("ERROR: Cant open '" + args[1] + "' to read.");
+            printUsage();
             return;
         }
 
@@ -36,25 +54,13 @@ public class Main {
 
         VCFFileReader variantFileReader = new VCFFileReader(varaintFile, false);
 
-        /*FileWriter outFileWriter;
-        try {
-            outFileWriter = new FileWriter(outFile);
-        } catch (IOException e) {
-            System.err.println("ERROR: Cant open '" + outFile.toURI() + "' to read.");
-            return;
-        }*/
-
-
         VcfToAlignmentConverter converter = new VcfToAlignmentConverter(false, 4);
         converter.useRelaxedPhylipFormat();
-        converter.convert(variantFileReader, indexedReferenceFile, outFile);
-
-        /*try {
-            outFileWriter.write(converter.getAlignment());
-            outFileWriter.close();
+        try {
+            converter.convert(variantFileReader, indexedReferenceFile, outFile);
         } catch (IOException e) {
-            e.printStackTrace();
-        }*/
-
+            System.err.println("ERROR: Could not open output file");
+            Main.printUsage();
+        }
     }
 }

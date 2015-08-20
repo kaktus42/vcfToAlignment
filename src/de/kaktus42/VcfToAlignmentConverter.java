@@ -100,17 +100,11 @@ public class VcfToAlignmentConverter
 
     public void convert(VCFFileReader varaintFileReader,
                         IndexedFastaSequenceFile indexedReferenceFile,
-                        File outFile){
+                        File outFile) throws IOException {
         VCFHeader vcfHeader = varaintFileReader.getFileHeader();
 
         // Prepare output file in buffered write mode
-        try {
-            outWriter = new PrintWriter(new BufferedWriter(new FileWriter(outFile)));
-            //outFileRAF = new RandomAccessFile(outFile, "w");
-        } catch (IOException e) {
-            e.printStackTrace();
-            throw new ConverterException("Could not open output file");
-        }
+        outWriter = new PrintWriter(new BufferedWriter(new FileWriter(outFile)));
 
         // Determine longest sample name for formatting
         // Initialize alignmentBuilders

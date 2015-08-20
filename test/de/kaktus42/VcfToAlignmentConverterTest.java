@@ -138,7 +138,11 @@ public class VcfToAlignmentConverterTest {
             fail("ERROR: Cant open '" + refFile.toString() + "' to read.");
         }
         converter.useRelaxedPhylipFormat();
-        converter.convert(variantFileReader, indexedReferenceFile, outFile);
+        try {
+            converter.convert(variantFileReader, indexedReferenceFile, outFile);
+        } catch (IOException e) {
+            fail("ERROR: Cant open '" + outFile.toString() + "' to read.");
+        }
 
         List<String> lines;
         try {

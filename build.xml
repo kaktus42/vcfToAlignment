@@ -1,10 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project name="playAnt" default="all">
 
+    <property name="version" value="1.2"/>
+
     <property name="jar.dir" value="${basedir}/lib" />
     <property name="src.dir" value="${basedir}/src" />
     <property name="test.dir" value="${basedir}/test" />
     <property name="class.dir" value="${basedir}/out" />
+    <property name="dist.dir" value="${basedir}/dist" />
     <property name="report.dir" value="${basedir}/testReport" />
 
     <path id="src.path">
@@ -13,7 +16,7 @@
 
     <path id="project.classpath">
         <pathelement path="${class.dir}"/>
-        <fileset dir="lib/">
+        <fileset dir="${jar.dir}">
             <include name="*.jar"/>
         </fileset>
     </path>
@@ -21,9 +24,10 @@
     <target name="clean">
         <delete dir="${report.dir}"/>
         <delete dir="${class.dir}"/>
+        <delete dir="${dist.dir}"/>
     </target>
 
-    <target name="compile">
+    <target name="compile" depends="clean">
         <mkdir dir="${class.dir}"/>
         <javac destdir="${class.dir}">
             <src path="${src.dir}"/>
@@ -55,6 +59,23 @@
         </junit>
     </target>
 
+    <target name="jar" depends="load.libs, compile">
+        <jar destfile="${dist.dir}/vcfToAlignment.jar">
+            <fileset dir="${class.dir}"/>
+            <fileset dir="${jar.dir}">
+                <include name="*.jar"/>
+            </fileset>
+            <manifest>
+                <attribute name="Main-Class" value="de.kaktus42.Main"/>
+                <attribute name="Implementation-Version" value="${version}"/>
+            </manifest>
+        </jar>
+        <echo file="${dist.dir}/vcfToAlignment.sh">#!/bin/sh
+prefix=$$(dirname $$(readlink $$0 || echo $$0))
+exec java -Xmx1g -jar "$$prefix"/vcfToAlignment.jar "$$@"</echo>
+        <chmod file="${dist.dir}/vcfToAlignment.sh" perm="ugo+rx"/>
+    </target>
+
     <target name="load.libs" description="Load libraries">
         <mkdir dir="${jar.dir}"/>
         <get src="http://central.maven.org/maven2/com/github/samtools/htsjdk/1.138/htsjdk-1.138.jar"
@@ -65,6 +86,6 @@
              dest="${jar.dir}/hamcrest-all-1.3.jar" usetimestamp="true"/>
     </target>
 
-    <target name="all" depends="load.libs, clean, runUnitTests" description="build all"/>
-    <target name="test" depends="load.libs, clean, runUnitTests" description="build all"/>
+    <target name="all" depends="load.libs, runUnitTests" description="build all"/>
+    <target name="test" depends="load.libs, runUnitTests" description="build all"/>
 </project>

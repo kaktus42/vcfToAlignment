@@ -128,7 +128,7 @@ public class Nucleobase
 
         Nucleobase that = (Nucleobase) o;
 
-        return this.base == that.base;
+        return this.hashCode() == that.hashCode();
     }
 
     @Override
